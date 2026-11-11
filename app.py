@@ -308,7 +308,7 @@ if "catalogo" not in st.session_state:
                 st.session_state.catalogo.append(p)
 
 # ---------------------------------------------------------
-# 3. EXPORTADOR EXCEL: TODO CENTRADO, FECHA RESALTADA Y FILTRO DE CEROS ACTIVO
+# 3. EXPORTADOR EXCEL: CON CANASTAS, ESTIBAS, CÓDIGOS Y TODO CENTRADO
 # ---------------------------------------------------------
 def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
     wb = Workbook()
@@ -378,7 +378,6 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
             c.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[4].height = 24
         
-        # Filtros automáticos en Excel
         ws.auto_filter.ref = f"A4:G1000"
             
         current_row = 5
@@ -393,15 +392,12 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
                 match_key = next((k for k in productos_dict_pedido if k.startswith(sku)), None)
                 qty = productos_dict_pedido[match_key]["Cantidad"] if match_key else 0
                 
-                # SKU centrado
                 ws.cell(row=current_row, column=1, value=int(sku) if sku.isdigit() else sku).alignment = Alignment(horizontal="center", vertical="center")
                 
-                # ELEMENTO / PRODUCTO: ¡TODO CENTRADO!
                 cell_desc = ws.cell(row=current_row, column=2, value=desc)
                 cell_desc.font = Font(name="Calibri", size=10, bold=True)
                 cell_desc.alignment = Alignment(horizontal="center", vertical="center")
                 
-                # Cantidad centrada
                 cell_qty = ws.cell(row=current_row, column=3, value=qty)
                 cell_qty.alignment = Alignment(horizontal="center", vertical="center")
                 
@@ -415,7 +411,6 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
                     cell.border = black_border
                 ws.row_dimensions[current_row].height = 20
                 
-                # OCULTAR FILAS EN CERO AUTOMÁTICAMENTE AL ABRIR EL EXCEL
                 if qty == 0:
                     ws.row_dimensions[current_row].hidden = True
                     
@@ -445,6 +440,7 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
             ws.row_dimensions[current_row].height = 22
             current_row += 1
             
+        # Bloque final de Canastas, Estibas y Códigos de Botellas
         extras = [
             ("BOT COCA-COLA 8 OZ (CANASTA)", 183303),
             ("BOT COCA-COLA 350ML", 184017),
@@ -457,14 +453,15 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
             ("CANASTA PLASTICA BRISA KOF", 184003)
         ]
         
-        current_row += 1
+        current_row += 2 # Espacio visual de separación
         for item_extra, cod_ext in extras:
-            # Elemento extra centrado
             c_ext = ws.cell(row=current_row, column=2, value=item_extra)
             c_ext.font = Font(name="Calibri", size=10, bold=True)
             c_ext.alignment = Alignment(horizontal="center", vertical="center")
             
-            ws.cell(row=current_row, column=4, value=cod_ext).alignment = Alignment(horizontal="center", vertical="center")
+            ws.cell(row=current_row, column=1, value=cod_ext).alignment = Alignment(horizontal="center", vertical="center")
+            ws.cell(row=current_row, column=3, value="") # Espacio para anotar cantidad de canastas/estibas
+            
             for c_i in range(1, 8):
                 cell = ws.cell(row=current_row, column=c_i)
                 cell.border = black_border
@@ -473,6 +470,7 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
             ws.row_dimensions[current_row].height = 20
             current_row += 1
 
+        # TOTAL CAJAS DEL CARGUE FINAL
         current_row += 1
         ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=2)
         gt_label = ws.cell(row=current_row, column=1, value="TOTAL CAJAS DEL CARGUE:")
