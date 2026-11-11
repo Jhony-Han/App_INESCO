@@ -308,7 +308,7 @@ if "catalogo" not in st.session_state:
                 st.session_state.catalogo.append(p)
 
 # ---------------------------------------------------------
-# 3. EXPORTADOR EXCEL CON FILTROS AUTOMÁTICOS Y FECHA EDITABLE
+# 3. EXPORTADOR EXCEL: TODO CENTRADO, FECHA RESALTADA Y FILTRO DE CEROS ACTIVO
 # ---------------------------------------------------------
 def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
     wb = Workbook()
@@ -335,7 +335,7 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
         ws.page_setup.fitToWidth = 1
         ws.page_setup.fitToHeight = 0
         
-        # Encabezado visual profesional y centrado
+        # Título superior
         ws.merge_cells('A1:G1')
         title_cell = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO - HOJA DE CARGUE")
         title_cell.font = Font(bold=True, size=14, color="FFFFFF")
@@ -343,6 +343,7 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
         title_cell.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[1].height = 30
 
+        # Ruta y Placa centrados
         ws.merge_cells('A2:C2')
         r_cell = ws.cell(row=2, column=1, value=f"Ruta: {nombre_ruta}")
         r_cell.font = Font(bold=True, size=12, color="1F4E78")
@@ -354,14 +355,20 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
         p_cell.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[2].height = 24
 
-        # Fecha editable en Excel (Celda de texto limpia)
-        ws.cell(row=3, column=1, value="Fecha:").font = Font(bold=True, size=10)
-        date_cell = ws.cell(row=3, column=2, value=fecha_str)
-        date_cell.font = Font(size=10, bold=True)
-        date_cell.alignment = Alignment(horizontal="left", vertical="center")
-        ws.row_dimensions[3].height = 18
+        # Fecha centrada, resaltada y en negrita
+        ws.merge_cells('A3:B3')
+        f_lbl = ws.cell(row=3, column=1, value="FECHA:")
+        f_lbl.font = Font(bold=True, size=11, color="000000")
+        f_lbl.alignment = Alignment(horizontal="right", vertical="center")
+        
+        ws.merge_cells('C3:D3')
+        date_cell = ws.cell(row=3, column=3, value=fecha_str)
+        date_cell.font = Font(size=12, bold=True, color="C00000")
+        date_cell.alignment = Alignment(horizontal="center", vertical="center")
+        date_cell.fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+        ws.row_dimensions[3].height = 22
 
-        # Cabeceras y activación de AutoFiltro nativo de Excel
+        # Cabeceras
         headers = ["SKU", "ELEMENTO", "CANTIDAD", "DEVOLUCIÓN 1", "DEVOLUCIÓN 2", "DEVOLUCIÓN 3", "PISO / UBICACIÓN"]
         for col_idx, h_text in enumerate(headers, start=1):
             c = ws.cell(row=4, column=col_idx, value=h_text)
@@ -371,7 +378,7 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
             c.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[4].height = 24
         
-        # Habilitar filtros automáticos en toda la tabla
+        # Filtros automáticos en Excel
         ws.auto_filter.ref = f"A4:G1000"
             
         current_row = 5
@@ -386,13 +393,16 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
                 match_key = next((k for k in productos_dict_pedido if k.startswith(sku)), None)
                 qty = productos_dict_pedido[match_key]["Cantidad"] if match_key else 0
                 
+                # SKU centrado
                 ws.cell(row=current_row, column=1, value=int(sku) if sku.isdigit() else sku).alignment = Alignment(horizontal="center", vertical="center")
                 
+                # ELEMENTO / PRODUCTO: ¡TODO CENTRADO!
                 cell_desc = ws.cell(row=current_row, column=2, value=desc)
                 cell_desc.font = Font(name="Calibri", size=10, bold=True)
-                cell_desc.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+                cell_desc.alignment = Alignment(horizontal="center", vertical="center")
                 
-                cell_qty = ws.cell(row=current_row, column=3, value=qty) # Mantiene el cero visible para poder editar en Excel si es necesario
+                # Cantidad centrada
+                cell_qty = ws.cell(row=current_row, column=3, value=qty)
                 cell_qty.alignment = Alignment(horizontal="center", vertical="center")
                 
                 ws.cell(row=current_row, column=4, value="")
@@ -404,6 +414,11 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
                     cell = ws.cell(row=current_row, column=c_i)
                     cell.border = black_border
                 ws.row_dimensions[current_row].height = 20
+                
+                # OCULTAR FILAS EN CERO AUTOMÁTICAMENTE AL ABRIR EL EXCEL
+                if qty == 0:
+                    ws.row_dimensions[current_row].hidden = True
+                    
                 current_row += 1
                 
             end_sec_row = current_row - 1
@@ -426,11 +441,7 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
                 cell.fill = section_total_fill
                 cell.font = total_font
                 cell.border = black_border
-                if c_i == 3:
-                    cell.alignment = Alignment(horizontal="center", vertical="center")
-                    cell.number_format = '#,##0'
-                else:
-                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                cell.alignment = Alignment(horizontal="center", vertical="center")
             ws.row_dimensions[current_row].height = 22
             current_row += 1
             
@@ -448,7 +459,11 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
         
         current_row += 1
         for item_extra, cod_ext in extras:
-            ws.cell(row=current_row, column=2, value=item_extra).font = Font(name="Calibri", size=10, bold=True)
+            # Elemento extra centrado
+            c_ext = ws.cell(row=current_row, column=2, value=item_extra)
+            c_ext.font = Font(name="Calibri", size=10, bold=True)
+            c_ext.alignment = Alignment(horizontal="center", vertical="center")
+            
             ws.cell(row=current_row, column=4, value=cod_ext).alignment = Alignment(horizontal="center", vertical="center")
             for c_i in range(1, 8):
                 cell = ws.cell(row=current_row, column=c_i)
@@ -700,9 +715,6 @@ with tab4:
             st.session_state.pedidos_autoventa = {}
             st.success("¡Bandeja restablecida para los pedidos de hoy!")
             st.rerun()
-    with col_ctrl2:
-        # Checkbox en app web: permite ocultar o mostrar ceros en pantalla para revisión rápida
-        ocultar_ceros_web = st.checkbox("🔍 Ocultar productos en cero en pantalla", value=False)
 
     if st.session_state.pedidos_autoventa:
         st.info(f"Hay pedidos activos de {len(st.session_state.pedidos_autoventa)} ruta(s) para hoy ({date.today()}).")
@@ -713,9 +725,6 @@ with tab4:
                 df_pedido_temp = pd.DataFrame.from_dict(info['productos'], orient='index')
                 if 'SKU' in df_pedido_temp.columns:
                     df_pedido_temp = df_pedido_temp[['SKU', 'Descripción del Producto', 'Cantidad']]
-                
-                if ocultar_ceros_web and not df_pedido_temp.empty:
-                    df_pedido_temp = df_pedido_temp[df_pedido_temp['Cantidad'] > 0]
                 
                 st.dataframe(df_pedido_temp, use_container_width=True)
                 
