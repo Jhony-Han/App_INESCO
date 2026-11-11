@@ -308,9 +308,9 @@ if "catalogo" not in st.session_state:
                 st.session_state.catalogo.append(p)
 
 # ---------------------------------------------------------
-# 3. EXPORTADOR EXCEL PROFESIONAL Y CENTRADO CON TRES COLUMNAS DE DEVOLUCIÓN
+# 3. EXPORTADOR EXCEL CON FILTROS AUTOMÁTICOS Y FECHA EDITABLE
 # ---------------------------------------------------------
-def exportar_excel_estilo_bodega(rutas_dict, fecha_str, solo_con_cantidad=False):
+def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
     wb = Workbook()
     default_sheet = wb.active
     wb.remove(default_sheet)
@@ -335,7 +335,7 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str, solo_con_cantidad=False)
         ws.page_setup.fitToWidth = 1
         ws.page_setup.fitToHeight = 0
         
-        # Encabezado visual grande, profesional y centrado
+        # Encabezado visual profesional y centrado
         ws.merge_cells('A1:G1')
         title_cell = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO - HOJA DE CARGUE")
         title_cell.font = Font(bold=True, size=14, color="FFFFFF")
@@ -349,16 +349,20 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str, solo_con_cantidad=False)
         r_cell.alignment = Alignment(horizontal="center", vertical="center")
 
         ws.merge_cells('D2:G2')
-        p_cell = ws.cell(row=2, column=4, value=f"Placa / Cupo: {r_info.get('placa', 'JYY 175')}")
+        p_cell = ws.cell(row=2, column=4, value=f"Placa: {r_info.get('placa', 'JYY 175')}")
         p_cell.font = Font(bold=True, size=12, color="1F4E78")
         p_cell.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[2].height = 24
 
-        ws.cell(row=3, column=1, value=f"Fecha: {fecha_str}").font = Font(size=10, italic=True)
+        # Fecha editable en Excel (Celda de texto limpia)
+        ws.cell(row=3, column=1, value="Fecha:").font = Font(bold=True, size=10)
+        date_cell = ws.cell(row=3, column=2, value=fecha_str)
+        date_cell.font = Font(size=10, bold=True)
+        date_cell.alignment = Alignment(horizontal="left", vertical="center")
         ws.row_dimensions[3].height = 18
 
-        # Cabeceras con 3 columnas de devolución
-        headers = ["SKU", "ELEMENTO / PRODUCTO", "CANTIDAD", "DEVOLUCIÓN 1", "DEVOLUCIÓN 2", "DEVOLUCIÓN 3", "PISO / UBICACIÓN"]
+        # Cabeceras y activación de AutoFiltro nativo de Excel
+        headers = ["SKU", "ELEMENTO", "CANTIDAD", "DEVOLUCIÓN 1", "DEVOLUCIÓN 2", "DEVOLUCIÓN 3", "PISO / UBICACIÓN"]
         for col_idx, h_text in enumerate(headers, start=1):
             c = ws.cell(row=4, column=col_idx, value=h_text)
             c.fill = header_fill
@@ -366,13 +370,15 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str, solo_con_cantidad=False)
             c.border = black_border
             c.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[4].height = 24
+        
+        # Habilitar filtros automáticos en toda la tabla
+        ws.auto_filter.ref = f"A4:G1000"
             
         current_row = 5
         productos_dict_pedido = r_info.get("productos", {})
         
         for nombre_seccion, lista_prods in CATALOGO_SECCIONES.items():
             start_sec_row = current_row
-            rows_in_section = 0
             
             for item in lista_prods:
                 sku = item["sku"]
@@ -380,19 +386,15 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str, solo_con_cantidad=False)
                 match_key = next((k for k in productos_dict_pedido if k.startswith(sku)), None)
                 qty = productos_dict_pedido[match_key]["Cantidad"] if match_key else 0
                 
-                if solo_con_cantidad and qty == 0:
-                    continue # Ocultar completamente filas en cero si se solicita
-                
                 ws.cell(row=current_row, column=1, value=int(sku) if sku.isdigit() else sku).alignment = Alignment(horizontal="center", vertical="center")
                 
                 cell_desc = ws.cell(row=current_row, column=2, value=desc)
                 cell_desc.font = Font(name="Calibri", size=10, bold=True)
                 cell_desc.alignment = Alignment(horizontal="left", vertical="center", indent=1)
                 
-                cell_qty = ws.cell(row=current_row, column=3, value=qty if qty > 0 else "")
+                cell_qty = ws.cell(row=current_row, column=3, value=qty) # Mantiene el cero visible para poder editar en Excel si es necesario
                 cell_qty.alignment = Alignment(horizontal="center", vertical="center")
                 
-                # Tres columnas de devolución vacías para anotación manual
                 ws.cell(row=current_row, column=4, value="")
                 ws.cell(row=current_row, column=5, value="")
                 ws.cell(row=current_row, column=6, value="")
@@ -403,15 +405,10 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str, solo_con_cantidad=False)
                     cell.border = black_border
                 ws.row_dimensions[current_row].height = 20
                 current_row += 1
-                rows_in_section += 1
-                
-            if rows_in_section == 0 and solo_con_cantidad:
-                continue
                 
             end_sec_row = current_row - 1
             ws.cell(row=current_row, column=1, value="")
             
-            # Nombre simplificado: TOTAL (centrado)
             cell_t_label = ws.cell(row=current_row, column=2, value="TOTAL")
             cell_t_label.font = total_font
             cell_t_label.alignment = Alignment(horizontal="center", vertical="center")
@@ -461,7 +458,6 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str, solo_con_cantidad=False)
             ws.row_dimensions[current_row].height = 20
             current_row += 1
 
-        # TOTAL CAJAS DEL CARGUE DESTACADO AL FINAL
         current_row += 1
         ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=2)
         gt_label = ws.cell(row=current_row, column=1, value="TOTAL CAJAS DEL CARGUE:")
@@ -575,7 +571,7 @@ if not st.session_state.autenticado:
     st.stop()
 
 # ---------------------------------------------------------
-# 6. PORTAL DE CONDUCTORES (CON ACORDEONES Y CONTADORES)
+# 6. PORTAL DE CONDUCTORES
 # ---------------------------------------------------------
 if st.session_state.rol_usuario == "driver":
     st.markdown('<p class="sub-title">📱 Portal de Autoventa / Solicitud de Carga - Rutas Inesco</p>', unsafe_allow_html=True)
@@ -618,7 +614,7 @@ if st.session_state.rol_usuario == "driver":
                 st.warning("⚠️ Seleccione la placa y al menos un producto con cantidad mayor a 0.")
     with col_env2:
         if pedido_ruta:
-            excel_driver_bytes = exportar_excel_estilo_bodega({ruta_sel: {"placa": placa_vehiculo, "productos": pedido_ruta}}, fecha_str=str(date.today()), solo_con_cantidad=False)
+            excel_driver_bytes = exportar_excel_estilo_bodega({ruta_sel: {"placa": placa_vehiculo, "productos": pedido_ruta}}, fecha_str=str(date.today()))
             st.download_button(
                 label="📥 Descargar mi Solicitud en Excel (.xlsx)",
                 data=excel_driver_bytes,
@@ -705,8 +701,8 @@ with tab4:
             st.success("¡Bandeja restablecida para los pedidos de hoy!")
             st.rerun()
     with col_ctrl2:
-        # Checkbox en la app web: si está activo, oculta los ceros en pantalla y al exportar; si se desmarca, aparecen de nuevo los ceros para ajustes
-        ocultar_ceros = st.checkbox("🔍 Ocultar productos en cero (Activar para vista limpia de bodega)", value=True)
+        # Checkbox en app web: permite ocultar o mostrar ceros en pantalla para revisión rápida
+        ocultar_ceros_web = st.checkbox("🔍 Ocultar productos en cero en pantalla", value=False)
 
     if st.session_state.pedidos_autoventa:
         st.info(f"Hay pedidos activos de {len(st.session_state.pedidos_autoventa)} ruta(s) para hoy ({date.today()}).")
@@ -718,7 +714,7 @@ with tab4:
                 if 'SKU' in df_pedido_temp.columns:
                     df_pedido_temp = df_pedido_temp[['SKU', 'Descripción del Producto', 'Cantidad']]
                 
-                if ocultar_ceros and not df_pedido_temp.empty:
+                if ocultar_ceros_web and not df_pedido_temp.empty:
                     df_pedido_temp = df_pedido_temp[df_pedido_temp['Cantidad'] > 0]
                 
                 st.dataframe(df_pedido_temp, use_container_width=True)
@@ -734,7 +730,7 @@ with tab4:
                     
         st.divider()
         if dict_pedidos_excel:
-            excel_bodega_bytes = exportar_excel_estilo_bodega(dict_pedidos_excel, fecha_str=date.today().strftime('%Y-%m-%d'), solo_con_cantidad=ocultar_ceros)
+            excel_bodega_bytes = exportar_excel_estilo_bodega(dict_pedidos_excel, fecha_str=date.today().strftime('%Y-%m-%d'))
             st.download_button(
                 label=f"📥 Descargar Cargue Formato Bodega ({date.today()})",
                 data=excel_bodega_bytes,
