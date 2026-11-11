@@ -308,9 +308,9 @@ if "catalogo" not in st.session_state:
                 st.session_state.catalogo.append(p)
 
 # ---------------------------------------------------------
-# 3. EXPORTADOR EXCEL EXACTO A LA HOJA LIMPIA DE BODEGA
+# 3. EXPORTADOR EXCEL PROFESIONAL Y CENTRADO CON TRES COLUMNAS DE DEVOLUCIÓN
 # ---------------------------------------------------------
-def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
+def exportar_excel_estilo_bodega(rutas_dict, fecha_str, solo_con_cantidad=False):
     wb = Workbook()
     default_sheet = wb.active
     wb.remove(default_sheet)
@@ -331,69 +331,100 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
         safe_title = re.sub(r'[\\/*?:[\]]', '_', nombre_ruta)
         ws = wb.create_sheet(title=safe_title[:30])
         
-        # Configurar para imprimir perfecto en una sola página horizontal
         ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
         ws.page_setup.fitToWidth = 1
         ws.page_setup.fitToHeight = 0
         
-        # Encabezado visual claro
-        ws.cell(row=1, column=1, value="Ruta:").font = Font(bold=True, size=12)
-        ws.cell(row=1, column=2, value=nombre_ruta).font = Font(bold=True, size=12, color="C00000")
-        ws.cell(row=1, column=4, value="Placa / Cupo:").font = Font(bold=True, size=12)
-        ws.cell(row=1, column=5, value=r_info.get("placa", "JYY 175")).font = Font(bold=True, size=12, color="C00000")
-        
-        ws.cell(row=2, column=1, value="Fecha:").font = Font(bold=True, size=11)
-        ws.cell(row=2, column=2, value=fecha_str).font = Font(size=11)
-        
-        # Estructura de cabeceras identica a la hoja limpia de tu compañero
-        headers = ["SKU", "ELEMENTO", "CANTIDAD PEDIDA", "DEVOLUCIÓN (MANO)", "PISO / UBICACIÓN"]
+        # Encabezado visual grande, profesional y centrado
+        ws.merge_cells('A1:G1')
+        title_cell = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO - HOJA DE CARGUE")
+        title_cell.font = Font(bold=True, size=14, color="FFFFFF")
+        title_cell.fill = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid")
+        title_cell.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 30
+
+        ws.merge_cells('A2:C2')
+        r_cell = ws.cell(row=2, column=1, value=f"Ruta: {nombre_ruta}")
+        r_cell.font = Font(bold=True, size=12, color="1F4E78")
+        r_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        ws.merge_cells('D2:G2')
+        p_cell = ws.cell(row=2, column=4, value=f"Placa / Cupo: {r_info.get('placa', 'JYY 175')}")
+        p_cell.font = Font(bold=True, size=12, color="1F4E78")
+        p_cell.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[2].height = 24
+
+        ws.cell(row=3, column=1, value=f"Fecha: {fecha_str}").font = Font(size=10, italic=True)
+        ws.row_dimensions[3].height = 18
+
+        # Cabeceras con 3 columnas de devolución
+        headers = ["SKU", "ELEMENTO / PRODUCTO", "CANTIDAD", "DEVOLUCIÓN 1", "DEVOLUCIÓN 2", "DEVOLUCIÓN 3", "PISO / UBICACIÓN"]
         for col_idx, h_text in enumerate(headers, start=1):
-            c = ws.cell(row=3, column=col_idx, value=h_text)
+            c = ws.cell(row=4, column=col_idx, value=h_text)
             c.fill = header_fill
             c.font = header_font
             c.border = black_border
             c.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[4].height = 24
             
-        current_row = 4
+        current_row = 5
         productos_dict_pedido = r_info.get("productos", {})
         
         for nombre_seccion, lista_prods in CATALOGO_SECCIONES.items():
             start_sec_row = current_row
+            rows_in_section = 0
+            
             for item in lista_prods:
                 sku = item["sku"]
                 desc = item["descripcion"]
                 match_key = next((k for k in productos_dict_pedido if k.startswith(sku)), None)
-                qty = productos_dict_pedido[match_key]["Cantidad"] if match_key else ""
+                qty = productos_dict_pedido[match_key]["Cantidad"] if match_key else 0
                 
-                ws.cell(row=current_row, column=1, value=int(sku) if sku.isdigit() else sku)
-                # Resalte recomendado: DESCRIPCIÓN EN NEGRITA
+                if solo_con_cantidad and qty == 0:
+                    continue # Ocultar completamente filas en cero si se solicita
+                
+                ws.cell(row=current_row, column=1, value=int(sku) if sku.isdigit() else sku).alignment = Alignment(horizontal="center", vertical="center")
+                
                 cell_desc = ws.cell(row=current_row, column=2, value=desc)
                 cell_desc.font = Font(name="Calibri", size=10, bold=True)
+                cell_desc.alignment = Alignment(horizontal="left", vertical="center", indent=1)
                 
-                # Una sola columna de cantidad solicitada (sin ceros)
-                cell_qty = ws.cell(row=current_row, column=3, value=qty)
+                cell_qty = ws.cell(row=current_row, column=3, value=qty if qty > 0 else "")
                 cell_qty.alignment = Alignment(horizontal="center", vertical="center")
                 
-                # Columna limpia para devolución manual a mano
-                ws.cell(row=current_row, column=4, value="") 
+                # Tres columnas de devolución vacías para anotación manual
+                ws.cell(row=current_row, column=4, value="")
                 ws.cell(row=current_row, column=5, value="")
+                ws.cell(row=current_row, column=6, value="")
+                ws.cell(row=current_row, column=7, value="")
                 
-                for c_i in range(1, 6):
+                for c_i in range(1, 8):
                     cell = ws.cell(row=current_row, column=c_i)
                     cell.border = black_border
+                ws.row_dimensions[current_row].height = 20
                 current_row += 1
+                rows_in_section += 1
+                
+            if rows_in_section == 0 and solo_con_cantidad:
+                continue
                 
             end_sec_row = current_row - 1
             ws.cell(row=current_row, column=1, value="")
-            ws.cell(row=current_row, column=2, value="TOTAL SECCIÓN")
-            # FÓRMULA ÚNICA DE SUMA DE LA SECCIÓN
+            
+            # Nombre simplificado: TOTAL (centrado)
+            cell_t_label = ws.cell(row=current_row, column=2, value="TOTAL")
+            cell_t_label.font = total_font
+            cell_t_label.alignment = Alignment(horizontal="center", vertical="center")
+            
             ws.cell(row=current_row, column=3, value=f"=SUM(C{start_sec_row}:C{end_sec_row})")
-            ws.cell(row=current_row, column=4, value="") # SIN FÓRMULA EN DEVOLUCIÓN (MANUAL A MANO)
+            ws.cell(row=current_row, column=4, value="")
             ws.cell(row=current_row, column=5, value="")
+            ws.cell(row=current_row, column=6, value="")
+            ws.cell(row=current_row, column=7, value="")
             
             filas_totales_secciones.append(f"C{current_row}")
             
-            for c_i in range(1, 6):
+            for c_i in range(1, 8):
                 cell = ws.cell(row=current_row, column=c_i)
                 cell.fill = section_total_fill
                 cell.font = total_font
@@ -402,7 +433,8 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
                     cell.alignment = Alignment(horizontal="center", vertical="center")
                     cell.number_format = '#,##0'
                 else:
-                    cell.alignment = Alignment(horizontal="left", vertical="center")
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+            ws.row_dimensions[current_row].height = 22
             current_row += 1
             
         extras = [
@@ -420,29 +452,39 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
         current_row += 1
         for item_extra, cod_ext in extras:
             ws.cell(row=current_row, column=2, value=item_extra).font = Font(name="Calibri", size=10, bold=True)
-            ws.cell(row=current_row, column=4, value=cod_ext)
-            for c_i in range(1, 6):
+            ws.cell(row=current_row, column=4, value=cod_ext).alignment = Alignment(horizontal="center", vertical="center")
+            for c_i in range(1, 8):
                 cell = ws.cell(row=current_row, column=c_i)
                 cell.border = black_border
+                if c_i not in [2]:
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+            ws.row_dimensions[current_row].height = 20
             current_row += 1
 
-        # TOTAL CAJAS RESALTADO AL FINAL
+        # TOTAL CAJAS DEL CARGUE DESTACADO AL FINAL
         current_row += 1
-        ws.cell(row=current_row, column=2, value="TOTAL CAJAS DEL CARGUE:").font = Font(name="Calibri", size=12, bold=True, color="1F4E78")
+        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=2)
+        gt_label = ws.cell(row=current_row, column=1, value="TOTAL CAJAS DEL CARGUE:")
+        gt_label.font = Font(name="Calibri", size=12, bold=True, color="1F4E78")
+        gt_label.alignment = Alignment(horizontal="right", vertical="center")
+        
         formula_gran_total = "=SUM(" + ",".join(filas_totales_secciones) + ")" if filas_totales_secciones else "=0"
         cell_gt = ws.cell(row=current_row, column=3, value=formula_gran_total)
         cell_gt.font = Font(name="Calibri", size=13, bold=True, color="C00000")
         cell_gt.alignment = Alignment(horizontal="center", vertical="center")
         cell_gt.fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
         
-        for c_i in range(1, 6):
+        for c_i in range(1, 8):
             ws.cell(row=current_row, column=c_i).border = black_border
+        ws.row_dimensions[current_row].height = 26
 
         ws.column_dimensions['A'].width = 14
         ws.column_dimensions['B'].width = 45
-        ws.column_dimensions['C'].width = 20
-        ws.column_dimensions['D'].width = 22
-        ws.column_dimensions['E'].width = 20
+        ws.column_dimensions['C'].width = 15
+        ws.column_dimensions['D'].width = 16
+        ws.column_dimensions['E'].width = 16
+        ws.column_dimensions['F'].width = 16
+        ws.column_dimensions['G'].width = 18
             
     output = io.BytesIO()
     wb.save(output)
@@ -576,7 +618,7 @@ if st.session_state.rol_usuario == "driver":
                 st.warning("⚠️ Seleccione la placa y al menos un producto con cantidad mayor a 0.")
     with col_env2:
         if pedido_ruta:
-            excel_driver_bytes = exportar_excel_estilo_bodega({ruta_sel: {"placa": placa_vehiculo, "productos": pedido_ruta}}, fecha_str=str(date.today()))
+            excel_driver_bytes = exportar_excel_estilo_bodega({ruta_sel: {"placa": placa_vehiculo, "productos": pedido_ruta}}, fecha_str=str(date.today()), solo_con_cantidad=False)
             st.download_button(
                 label="📥 Descargar mi Solicitud en Excel (.xlsx)",
                 data=excel_driver_bytes,
@@ -586,7 +628,7 @@ if st.session_state.rol_usuario == "driver":
     st.stop()
 
 # ---------------------------------------------------------
-# 7. PANEL DE ADMINISTRACIÓN (FILTRADO DE CEROS EN PANTALLA)
+# 7. PANEL DE ADMINISTRACIÓN
 # ---------------------------------------------------------
 col_head1, col_head2 = st.columns([6, 1])
 with col_head1:
@@ -663,8 +705,8 @@ with tab4:
             st.success("¡Bandeja restablecida para los pedidos de hoy!")
             st.rerun()
     with col_ctrl2:
-        # FILTRO: Ocultar nombres y filas en cero
-        ocultar_ceros = st.checkbox("🔍 Filtrar y ocultar productos NO pedidos (Ceros)", value=True)
+        # Checkbox en la app web: si está activo, oculta los ceros en pantalla y al exportar; si se desmarca, aparecen de nuevo los ceros para ajustes
+        ocultar_ceros = st.checkbox("🔍 Ocultar productos en cero (Activar para vista limpia de bodega)", value=True)
 
     if st.session_state.pedidos_autoventa:
         st.info(f"Hay pedidos activos de {len(st.session_state.pedidos_autoventa)} ruta(s) para hoy ({date.today()}).")
@@ -676,7 +718,6 @@ with tab4:
                 if 'SKU' in df_pedido_temp.columns:
                     df_pedido_temp = df_pedido_temp[['SKU', 'Descripción del Producto', 'Cantidad']]
                 
-                # Ocultar completamente filas y nombres si no pidieron nada
                 if ocultar_ceros and not df_pedido_temp.empty:
                     df_pedido_temp = df_pedido_temp[df_pedido_temp['Cantidad'] > 0]
                 
@@ -693,7 +734,7 @@ with tab4:
                     
         st.divider()
         if dict_pedidos_excel:
-            excel_bodega_bytes = exportar_excel_estilo_bodega(dict_pedidos_excel, fecha_str=date.today().strftime('%Y-%m-%d'))
+            excel_bodega_bytes = exportar_excel_estilo_bodega(dict_pedidos_excel, fecha_str=date.today().strftime('%Y-%m-%d'), solo_con_cantidad=ocultar_ceros)
             st.download_button(
                 label=f"📥 Descargar Cargue Formato Bodega ({date.today()})",
                 data=excel_bodega_bytes,
