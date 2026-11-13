@@ -67,7 +67,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 2. CREDENCIALES SIMPLIFICADAS PARA CONDUCTORES Y ADMIN
+# 2. CREDENCIALES Y PERSISTENCIA COMPARTIDA
 # ---------------------------------------------------------
 USUARIOS_SISTEMA = {
     "inesco2026admin": {"rol": "admin",  "ruta": None,     "placa": None},
@@ -334,7 +334,7 @@ if "catalogo" not in st.session_state:
                 st.session_state.catalogo.append(p)
 
 # ---------------------------------------------------------
-# 4. EXPORTADOR EXCEL PROFESIONAL (BODEGA, TAMAÑO CARTA, CÁLCULOS Y OCULTO DE CEROS)
+# 4. EXPORTADOR EXCEL PROFESIONAL (OCULTA TOTALES SI LA SECCIÓN ESTÁ EN 0)
 # ---------------------------------------------------------
 def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
     wb = Workbook()
@@ -410,16 +410,17 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
         
         for nombre_seccion, lista_prods in CATALOGO_SECCIONES.items():
             start_sec_row = current_row
-            rows_in_section = 0
+            sec_tiene_productos = False
             
             for item in lista_prods:
                 sku = item["sku"]
-                # Limpiar sufijo _bis si lo tuviera para mostrar el SKU real limpio
                 sku_clean = sku.replace("_bis", "")
                 desc = item["descripcion"]
                 
                 match_key = next((k for k in productos_dict_pedido if k.startswith(sku_clean)), None)
                 qty = productos_dict_pedido[match_key]["Cantidad"] if match_key else 0
+                if qty > 0:
+                    sec_tiene_productos = True
                 
                 ws.cell(row=current_row, column=1, value=int(sku_clean) if sku_clean.isdigit() else sku_clean).alignment = Alignment(horizontal="center", vertical="center")
                 
@@ -444,7 +445,6 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
                     ws.row_dimensions[current_row].hidden = True
                     
                 current_row += 1
-                rows_in_section += 1
                 
             end_sec_row = current_row - 1
             ws.cell(row=current_row, column=1, value="")
@@ -471,6 +471,11 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
                 cell.border = black_border
                 cell.alignment = Alignment(horizontal="center", vertical="center")
             ws.row_dimensions[current_row].height = 22
+            
+            # Ocultar también la fila de TOTAL si la sección entera no tiene productos pedidos (> 0)
+            if not sec_tiene_productos:
+                ws.row_dimensions[current_row].hidden = True
+                
             current_row += 1
             
         extras = [
@@ -740,7 +745,7 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 6. PANTALLA DE ACCESO (LOGIN SIMPLIFICADO CON CONTRASEÑA)
+# 6. PANTALLA DE ACCESO
 # ---------------------------------------------------------
 def limpiar_campos_login():
     st.session_state["input_pwd"] = ""
@@ -773,7 +778,7 @@ if not st.session_state.autenticado:
     st.stop()
 
 # ---------------------------------------------------------
-# 7. PORTAL DE CONDUCTORES (CON RECARGA DE PEDIDO PREVIO Y HORA COLOMBIA)
+# 7. PORTAL DE CONDUCTORES
 # ---------------------------------------------------------
 if st.session_state.rol_usuario == "driver":
     ruta_fija = st.session_state.ruta_asignada
@@ -799,7 +804,6 @@ if st.session_state.rol_usuario == "driver":
     if pedido_existente_ruta.get("fecha") == hoy_str:
         prod_previos = pedido_existente_ruta.get("productos", {})
         for k, v in prod_previos.items():
-            # Clave interna única para precarga
             key_st = f"drv_{ruta_fija}_{v['SKU']}"
             if key_st not in st.session_state:
                 st.session_state[key_st] = v['Cantidad']
@@ -809,7 +813,6 @@ if st.session_state.rol_usuario == "driver":
         with st.expander(f"📌 {nombre_seccion}", expanded=False):
             cant_seccion_actual = 0
             for idx, item in enumerate(lista_productos):
-                # Generación de key 100% única combinando sección y índice para evitar errores de duplicidad
                 key_input = f"drv_{ruta_fija}_{sec_idx}_{idx}_{item['sku']}"
                 val_inicial = st.session_state.get(f"drv_{ruta_fija}_{item['sku']}", 0)
                 
@@ -822,7 +825,6 @@ if st.session_state.rol_usuario == "driver":
                 )
                 if cant > 0:
                     cant_seccion_actual += 1
-                    # Usar SKU limpio sin _bis para almacenar el pedido
                     sku_clean = item['sku'].replace('_bis', '')
                     pedido_ruta[f"{sku_clean}_{idx}"] = {
                         "SKU": sku_clean,
@@ -861,7 +863,7 @@ if st.session_state.rol_usuario == "driver":
     st.stop()
 
 # ---------------------------------------------------------
-# 8. PANEL DE ADMINISTRACIÓN (PESTAÑAS ORIGINALES RESTAURADAS)
+# 8. PANEL DE ADMINISTRACIÓN
 # ---------------------------------------------------------
 col_head1, col_head2 = st.columns([6, 1])
 with col_head1:
@@ -879,10 +881,50 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "🚚 Recepción de Cargues (Autoventa)"
 ])
 
-# --- PESTAÑA 1: FECHAS DE VENCIMIENTO ---
+# --- PESTAÑA 1: FECHAS DE VENCIMIENTO (CON JSON Y FECHA MÁS PRÓXIMA) ---
 with tab1:
-    st.markdown('<p class="sub-title">➕ Agregar o Actualizar Fecha de Vencimiento</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">➕ Agregar o Actualizar Fecha de Vencimiento (Fecha Más Próxima)</p>', unsafe_allow_html=True)
+    
+    with st.expander("📂 Opciones de Respaldo, Sincronización y Limpieza (JSON)"):
+        datos_respaldo = {
+            "vencimientos": st.session_state.vencimientos,
+            "catalogo": st.session_state.catalogo
+        }
+        json_str = json.dumps(datos_respaldo, ensure_ascii=False, indent=4)
+        st.download_button(
+            label="📥 Descargar Archivo Respaldo Completo (.json)",
+            data=json_str,
+            file_name=f"respaldo_inesco_{date.today()}.json",
+            mime="application/json"
+        )
+        
+        uploaded_backup = st.file_uploader("📤 Subir Respaldo Previo (.json)", type=["json"], key="uploader_backup")
+        if uploaded_backup is not None:
+            if "last_uploaded_file" not in st.session_state or st.session_state.last_uploaded_file != uploaded_backup.name:
+                try:
+                    stringio = io.StringIO(uploaded_backup.getvalue().decode("utf-8"))
+                    data_recuperada = json.load(stringio)
+                    if isinstance(data_recuperada, dict) and "vencimientos" in data_recuperada:
+                        st.session_state.vencimientos = data_recuperada["vencimientos"]
+                        guardar_json(ARCHIVO_VENCIMIENTOS, st.session_state.vencimientos)
+                        if "catalogo" in data_recuperada:
+                            st.session_state.catalogo = data_recuperada["catalogo"]
+                        st.session_state.last_uploaded_file = uploaded_backup.name
+                        st.success("✅ ¡Datos y catálogo restaurados exitosamente!")
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"⚠️ Error al leer el respaldo: {e}")
+        
+        if st.button("🗑️ Limpiar Todos los Vencimientos Registrados", key="btn_limpiar_todo"):
+            st.session_state.vencimientos = []
+            guardar_json(ARCHIVO_VENCIMIENTOS, [])
+            if "last_uploaded_file" in st.session_state:
+                del st.session_state.last_uploaded_file
+            st.toast("🧹 ¡Se han borrado todos los registros!", icon="✅")
+            st.rerun()
+
     skus_opt = [f"{item['sku'].replace('_bis', '')} - {item['descripcion']}" for item in st.session_state.catalogo]
+
     c1, c2, c3 = st.columns([2, 1, 1])
     with c1:
         sel_sku = st.selectbox("Seleccionar Producto:", options=skus_opt, key="select_sku_venc")
@@ -894,47 +936,111 @@ with tab1:
     if st.button("💾 Guardar Fecha", key="btn_save_venc"):
         if sel_sku:
             s_code, s_desc = sel_sku.split(" - ", 1)
-            nueva_fecha_str = fecha_seleccionada.strftime("%d/%m/%Y")
+            nueva_fecha_dt = fecha_seleccionada
+            nueva_fecha_str = nueva_fecha_dt.strftime("%d/%m/%Y")
             cant_final = cantidad_input.strip() if cantidad_input.strip().isdigit() else "-"
-            st.session_state.vencimientos.append({
-                "SKU": s_code,
-                "Descripción del Producto": s_desc,
-                "Cantidad": cant_final,
-                "Fecha Vencimiento": nueva_fecha_str
-            })
+            
+            # Lógica para comparar y guardar siempre la fecha más próxima a vencer
+            sku_existente_idx = next(
+                (i for i, r in enumerate(st.session_state.vencimientos) if r["SKU"] == s_code), 
+                None
+            )
+            
+            if sku_existente_idx is not None:
+                fecha_actual_str = st.session_state.vencimientos[sku_existente_idx]["Fecha Vencimiento"]
+                try:
+                    fecha_actual_dt = datetime.strptime(fecha_actual_str, "%d/%m/%Y").date()
+                except:
+                    fecha_actual_dt = nueva_fecha_dt
+                
+                if nueva_fecha_dt < fecha_actual_dt:
+                    st.session_state.vencimientos[sku_existente_idx]["Fecha Vencimiento"] = nueva_fecha_str
+                    st.toast(f"🔄 Se actualizó a la fecha más próxima ({nueva_fecha_str}) para {s_code}.", icon="✅")
+                else:
+                    st.toast(f"ℹ️ Ya existe una fecha más próxima ({fecha_actual_str}) para este producto.", icon="ℹ️")
+                
+                if cant_final != "-":
+                    st.session_state.vencimientos[sku_existente_idx]["Cantidad"] = cant_final
+            else:
+                nuevo_registro = {
+                    "SKU": s_code,
+                    "Descripción del Producto": s_desc,
+                    "Cantidad": cant_final,
+                    "Fecha Vencimiento": nueva_fecha_str
+                }
+                st.session_state.vencimientos.append(nuevo_registro)
+                st.toast(f"¡Guardado correctamente ({s_code} - {nueva_fecha_str})!", icon="✅")
+            
             guardar_json(ARCHIVO_VENCIMIENTOS, st.session_state.vencimientos)
-            st.success("✅ ¡Guardado correctamente!")
             st.rerun()
 
+    st.markdown('<p class="sub-title">📋 Productos Registrados en Bodega (Fecha Única más Próxima)</p>', unsafe_allow_html=True)
     if st.session_state.vencimientos:
-        if st.button("🗑️ Limpiar Todos los Vencimientos"):
-            st.session_state.vencimientos = []
-            guardar_json(ARCHIVO_VENCIMIENTOS, [])
+        catalogo_actual = st.session_state.get("catalogo", [])
+        orden_catalogo = {item["sku"].replace("_bis", ""): idx for idx, item in enumerate(catalogo_actual)}
+
+        lotes_con_orden = []
+        for idx, item in enumerate(st.session_state.vencimientos):
+            estado, dias = calcular_estado_vencimiento(item["Fecha Vencimiento"])
+            pos_cat = orden_catalogo.get(item["SKU"], 999)
+            lote_data = item.copy()
+            lote_data["_idx_original"] = idx
+            lote_data["_dias"] = dias
+            lote_data["_estado"] = estado
+            lote_data["_pos"] = pos_cat
+            lotes_con_orden.append(lote_data)
+
+        lotes_ordenados = sorted(lotes_con_orden, key=lambda x: x["_pos"])
+
+        to_delete = None
+        for row in lotes_ordenados:
+            orig_idx = row["_idx_original"]
+            dias_rest = row["_dias"]
+            estado_txt = row["_estado"]
+            
+            col_a, col_b, col_c, col_d, col_e, col_f = st.columns([1.5, 3.0, 2.2, 1.2, 2.2, 1.2])
+            col_a.write(f"**{row['SKU']}**")
+            col_b.write(row['Descripción del Producto'])
+            col_c.write(f"📅 **{st.session_state.vencimientos[orig_idx]['Fecha Vencimiento']}**")
+            col_d.write(f"📦 {row.get('Cantidad', '-')}")
+            
+            if dias_rest <= 30:
+                col_e.error(f"{estado_txt} ({dias_rest}d)")
+            elif dias_rest <= 60:
+                col_e.warning(f"{estado_txt} ({dias_rest}d)")
+            else:
+                col_e.success(f"{estado_txt} ({dias_rest}d)")
+            
+            if col_f.button("❌ Borrar", key=f"del_lote_{orig_idx}"):
+                to_delete = orig_idx
+
+        if to_delete is not None:
+            st.session_state.vencimientos.pop(to_delete)
+            guardar_json(ARCHIVO_VENCIMIENTOS, st.session_state.vencimientos)
             st.rerun()
 
-        filas_venc = []
-        for reg in st.session_state.vencimientos:
-            estado_txt, dias_rest = calcular_estado_vencimiento(reg["Fecha Vencimiento"])
-            filas_venc.append({
-                "SKU": reg["SKU"],
-                "Descripción del Producto": reg["Descripción del Producto"],
-                "Cantidad": reg["Cantidad"],
-                "Fecha Vencimiento": reg["Fecha Vencimiento"],
-                "Días Restantes": dias_rest if dias_rest != 9999 else "-",
-                "Estado": estado_txt
-            })
-        df_venc = pd.DataFrame(filas_venc)
-        st.dataframe(df_venc, use_container_width=True)
-        
+        st.divider()
         excel_venc_bytes = exportar_excel_vencimientos_organizado(st.session_state.vencimientos, fecha_str=date.today().strftime('%d/%m/%Y'))
-        st.download_button(
-            label="📥 Descargar Reporte de Vencimientos (.xlsx)",
-            data=excel_venc_bytes,
-            file_name=f"Vencimientos_Inesco_{date.today()}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        
+        col_dl1, col_dl2 = st.columns([1, 1])
+        with col_dl1:
+            st.download_button(
+                label="📥 Descargar Reporte Agrupado (.xlsx)",
+                data=excel_venc_bytes,
+                file_name=f"Vencimientos_Inesco_Agrupado_{date.today()}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        with col_dl2:
+            texto_wa = urllib.parse.quote(f"Hola, comparto el reporte de control de vencimientos agrupado de Distribuciones Inesco del {date.today().strftime('%d/%m/%Y')}.")
+            st.markdown(f"""
+                <a href="https://api.whatsapp.com/send?text={texto_wa}" target="_blank" style="text-decoration: none;">
+                    <div style="background-color: #25D366; color: white; padding: 10px 15px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 0.95rem;">
+                        💬 Abrir WhatsApp con Aviso
+                    </div>
+                </a>
+            """, unsafe_allow_html=True)
     else:
-        st.info("ℹ️ No hay fechas de vencimiento registradas.")
+        st.info("ℹ️ No hay fechas de vencimiento registradas aún.")
 
 # --- PESTAÑA 2: ADMINISTRAR SKUS ---
 with tab2:
@@ -951,7 +1057,6 @@ with tab2:
             st.rerun()
     
     st.markdown("#### Catálogo Actual:")
-    # Mostrar catálogo limpio sin sufijos técnicos internos
     cat_display = [{"sku": item["sku"].replace("_bis", ""), "descripcion": item["descripcion"]} for item in st.session_state.catalogo]
     st.dataframe(pd.DataFrame(cat_display), use_container_width=True)
 
