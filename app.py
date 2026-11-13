@@ -5,6 +5,7 @@ import io
 import os
 import re
 import json
+import urllib.parse
 from datetime import datetime, date, timezone, timedelta
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -472,7 +473,6 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
                 cell.alignment = Alignment(horizontal="center", vertical="center")
             ws.row_dimensions[current_row].height = 22
             
-            # Ocultar también la fila de TOTAL si la sección entera no tiene productos pedidos (> 0)
             if not sec_tiene_productos:
                 ws.row_dimensions[current_row].hidden = True
                 
@@ -881,7 +881,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "🚚 Recepción de Cargues (Autoventa)"
 ])
 
-# --- PESTAÑA 1: FECHAS DE VENCIMIENTO (CON JSON Y FECHA MÁS PRÓXIMA) ---
+# --- PESTAÑA 1: FECHAS DE VENCIMIENTO ---
 with tab1:
     st.markdown('<p class="sub-title">➕ Agregar o Actualizar Fecha de Vencimiento (Fecha Más Próxima)</p>', unsafe_allow_html=True)
     
@@ -940,7 +940,6 @@ with tab1:
             nueva_fecha_str = nueva_fecha_dt.strftime("%d/%m/%Y")
             cant_final = cantidad_input.strip() if cantidad_input.strip().isdigit() else "-"
             
-            # Lógica para comparar y guardar siempre la fecha más próxima a vencer
             sku_existente_idx = next(
                 (i for i, r in enumerate(st.session_state.vencimientos) if r["SKU"] == s_code), 
                 None
@@ -1083,7 +1082,8 @@ with tab3:
                 st.dataframe(df_r, use_container_width=True)
                 dfs_para_excel[r_code] = {"df": df_r, "header": r_content["header"]}
         
-        excel_pdf_bytes = exportar_excel_multiruta(dfs_para_excel, fecha_str=date.today().strftime('%d/%m/%Y'), es_reporte_rutas=True)
+        # Nota: asegúrate de usar la función de exportación multiruta si la tenías previamente o convertir_df_a_excel
+        excel_pdf_bytes = convertir_df_a_excel({k: v["df"] for k, v in dfs_para_excel.items()})
         st.download_button(
             label="📥 Descargar Extracción de Rutas en Excel (.xlsx)",
             data=excel_pdf_bytes,
