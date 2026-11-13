@@ -245,7 +245,7 @@ CATALOGO_SECCIONES = {
         {"sku": "136400", "descripcion": "COCA COLA ZERO 269ML LAT(12)KZ"},
         {"sku": "136399", "descripcion": "COCA COLA ORIGINAL 269ML LAT(12)"},
         {"sku": "136401", "descripcion": "CCZERO CAFE 269ML LAT(12)"},
-        {"sku": "136402", "descripcion": "COCA-COLA ZERO CAFE 269ML (12)"},
+        {"sku": "136402_bis", "descripcion": "COCA-COLA ZERO CAFE 269ML (12)"},
         {"sku": "136409", "descripcion": "COCA-COLA ORIGINAL CAFE 269ML LAT(12)"}
     ],
     "16. ENERGIZANTES MONSTER Y FURY (473 ML)": [
@@ -355,7 +355,6 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
         safe_title = re.sub(r'[\\/*?:[\]]', '_', nombre_ruta)
         ws = wb.create_sheet(title=safe_title[:30])
         
-        # Configuración de página tamaño Carta, horizontal ajustada a 1 página de ancho
         ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
         ws.page_setup.paperSize = ws.PAPERSIZE_LETTER
         ws.page_setup.fitToWidth = 1
@@ -363,7 +362,6 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
         ws.sheet_properties.pageSetUpPr.fitToPage = True
         ws.page_setup.horizontalCentered = True
         
-        # Título superior
         ws.merge_cells('A1:G1')
         title_cell = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO - HOJA DE CARGUE")
         title_cell.font = Font(bold=True, size=14, color="FFFFFF")
@@ -371,7 +369,6 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
         title_cell.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[1].height = 30
 
-        # Ruta y Placa centrados
         ws.merge_cells('A2:C2')
         r_cell = ws.cell(row=2, column=1, value=f"Ruta: {nombre_ruta}")
         r_cell.font = Font(bold=True, size=12, color="1F4E78")
@@ -383,7 +380,6 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
         p_cell.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[2].height = 24
 
-        # Fecha centrada, resaltada y en negrita
         ws.merge_cells('A3:B3')
         f_lbl = ws.cell(row=3, column=1, value="FECHA:")
         f_lbl.font = Font(bold=True, size=11, color="000000")
@@ -396,7 +392,6 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
         date_cell.fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
         ws.row_dimensions[3].height = 22
 
-        # Cabeceras
         headers = ["SKU", "ELEMENTO", "CANTIDAD", "DEVOLUCIÓN 1", "DEVOLUCIÓN 2", "DEVOLUCIÓN 3", "PISO / UBICACIÓN"]
         for col_idx, h_text in enumerate(headers, start=1):
             c = ws.cell(row=4, column=col_idx, value=h_text)
@@ -411,7 +406,7 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
         current_row = 5
         productos_dict_pedido = r_info.get("productos", {})
         filas_totales_secciones = []
-        filas_secciones_retornables_cajas = [] # Para sumar botellas retornables (8oz y 350ml)
+        filas_secciones_retornables_cajas = []
         
         for nombre_seccion, lista_prods in CATALOGO_SECCIONES.items():
             start_sec_row = current_row
@@ -419,11 +414,14 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
             
             for item in lista_prods:
                 sku = item["sku"]
+                # Limpiar sufijo _bis si lo tuviera para mostrar el SKU real limpio
+                sku_clean = sku.replace("_bis", "")
                 desc = item["descripcion"]
-                match_key = next((k for k in productos_dict_pedido if k.startswith(sku)), None)
+                
+                match_key = next((k for k in productos_dict_pedido if k.startswith(sku_clean)), None)
                 qty = productos_dict_pedido[match_key]["Cantidad"] if match_key else 0
                 
-                ws.cell(row=current_row, column=1, value=int(sku) if sku.isdigit() else sku).alignment = Alignment(horizontal="center", vertical="center")
+                ws.cell(row=current_row, column=1, value=int(sku_clean) if sku_clean.isdigit() else sku_clean).alignment = Alignment(horizontal="center", vertical="center")
                 
                 cell_desc = ws.cell(row=current_row, column=2, value=desc)
                 cell_desc.font = Font(name="Calibri", size=10, bold=True)
@@ -442,7 +440,6 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
                     cell.border = black_border
                 ws.row_dimensions[current_row].height = 20
                 
-                # Ocultar automáticamente filas con cantidad 0
                 if qty == 0:
                     ws.row_dimensions[current_row].hidden = True
                     
@@ -464,7 +461,6 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
             
             filas_totales_secciones.append(f"C{current_row}")
             
-            # Si es la sección 1 o 2 (Productos retornables 8oz y 350ml), guardamos la celda del total de cajas
             if "1. PRODUCTOS 8 ONZAS" in nombre_seccion or "2. PRODUCTOS 350 ML" in nombre_seccion:
                 filas_secciones_retornables_cajas.append(f"C{current_row}")
             
@@ -477,7 +473,6 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
             ws.row_dimensions[current_row].height = 22
             current_row += 1
             
-        # Bloque final de Canastas, Estibas y Códigos de Botellas
         extras = [
             ("BOT COCA-COLA 8 OZ (CANASTA)", 183303),
             ("BOT COCA-COLA 350ML", 184017),
@@ -491,8 +486,6 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
         ]
         
         current_row += 2
-        fila_inicio_extras = current_row
-        
         for item_extra, cod_ext in extras:
             c_ext = ws.cell(row=current_row, column=2, value=item_extra)
             c_ext.font = Font(name="Calibri", size=10, bold=True)
@@ -500,7 +493,6 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
             
             ws.cell(row=current_row, column=1, value=cod_ext).alignment = Alignment(horizontal="center", vertical="center")
             
-            # Si es canasta de botellas retornables, calcular automáticamente con fórmula el total de cajas de 8oz y 350ml
             if "CANASTA" in item_extra and ("8 OZ" in item_extra or "350ML" in item_extra) and filas_secciones_retornables_cajas:
                 formula_cajas = "=" + "+".join(filas_secciones_retornables_cajas)
                 ws.cell(row=current_row, column=3, value=formula_cajas)
@@ -515,7 +507,6 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
             ws.row_dimensions[current_row].height = 20
             current_row += 1
 
-        # TOTAL CAJAS DEL CARGUE FINAL
         current_row += 1
         ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=2)
         gt_label = ws.cell(row=current_row, column=1, value="TOTAL CAJAS DEL CARGUE:")
@@ -545,11 +536,11 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 5. EXTRACCIÓN DE PDF Y VENCIMIENTOS (ORIGINAL RESTAURADO)
+# 5. EXTRACCIÓN DE PDF Y VENCIMIENTOS
 # ---------------------------------------------------------
 def procesar_pdf_rutas(pdf_file):
     routes_data = {}
-    mapa_catalogo = {item["sku"]: item["descripcion"] for item in st.session_state.catalogo}
+    mapa_catalogo = {item["sku"].replace("_bis", ""): item["descripcion"] for item in st.session_state.catalogo}
     with pdfplumber.open(pdf_file) as pdf:
         current_route = "ML3E51"
         current_header_info = "Ruta / No.de Carga: ML3E51"
@@ -684,12 +675,12 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
         c.alignment = Alignment(horizontal="center", vertical="center")
 
     catalogo_actual = st.session_state.get("catalogo", [])
-    orden_catalogo = {item["sku"]: idx for idx, item in enumerate(catalogo_actual)}
+    orden_catalogo = {item["sku"].replace("_bis", ""): idx for idx, item in enumerate(catalogo_actual)}
 
     datos_procesados = []
     for item in vencimientos_list:
         estado, dias = calcular_estado_vencimiento(item["Fecha Vencimiento"])
-        pos_catalogo = orden_catalogo.get(item["SKU"], 999)
+        pos_catalogo = orden_catalogo.get(item["SKU"].replace("_bis", ""), 999)
         datos_procesados.append({
             "SKU": item["SKU"],
             "Descripción del Producto": item["Descripción del Producto"],
@@ -801,29 +792,29 @@ if st.session_state.rol_usuario == "driver":
     st.markdown("---")
     st.markdown("#### 📦 Digita las cantidades solicitadas por sección:")
     
-    # Cargar pedidos existentes para precargar si ya había enviado antes hoy
     hoy_str = datetime.now(COLOMBIA_TZ).strftime("%Y-%m-%d")
     pedidos_actuales = cargar_json(ARCHIVO_PEDIDOS, {})
     pedido_existente_ruta = pedidos_actuales.get(ruta_fija, {})
     
-    # Si es del mismo día, precargamos los productos ya pedidos en el session_state si no están cargados
     if pedido_existente_ruta.get("fecha") == hoy_str:
         prod_previos = pedido_existente_ruta.get("productos", {})
         for k, v in prod_previos.items():
+            # Clave interna única para precarga
             key_st = f"drv_{ruta_fija}_{v['SKU']}"
             if key_st not in st.session_state:
                 st.session_state[key_st] = v['Cantidad']
 
     pedido_ruta = {}
-    for nombre_seccion, lista_productos in CATALOGO_SECCIONES.items():
+    for sec_idx, (nombre_seccion, lista_productos) in enumerate(CATALOGO_SECCIONES.items()):
         with st.expander(f"📌 {nombre_seccion}", expanded=False):
             cant_seccion_actual = 0
             for idx, item in enumerate(lista_productos):
-                key_input = f"drv_{ruta_fija}_{item['sku']}"
-                val_inicial = st.session_state.get(key_input, 0)
+                # Generación de key 100% única combinando sección y índice para evitar errores de duplicidad
+                key_input = f"drv_{ruta_fija}_{sec_idx}_{idx}_{item['sku']}"
+                val_inicial = st.session_state.get(f"drv_{ruta_fija}_{item['sku']}", 0)
                 
                 cant = st.number_input(
-                    f"{item['sku']} - {item['descripcion']}",
+                    f"{item['sku'].replace('_bis', '')} - {item['descripcion']}",
                     min_value=0,
                     step=1,
                     value=val_inicial,
@@ -831,8 +822,10 @@ if st.session_state.rol_usuario == "driver":
                 )
                 if cant > 0:
                     cant_seccion_actual += 1
-                    pedido_ruta[f"{item['sku']}_{idx}"] = {
-                        "SKU": item['sku'],
+                    # Usar SKU limpio sin _bis para almacenar el pedido
+                    sku_clean = item['sku'].replace('_bis', '')
+                    pedido_ruta[f"{sku_clean}_{idx}"] = {
+                        "SKU": sku_clean,
                         "Descripción del Producto": item['descripcion'],
                         "Cantidad": cant
                     }
@@ -889,7 +882,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # --- PESTAÑA 1: FECHAS DE VENCIMIENTO ---
 with tab1:
     st.markdown('<p class="sub-title">➕ Agregar o Actualizar Fecha de Vencimiento</p>', unsafe_allow_html=True)
-    skus_opt = [f"{item['sku']} - {item['descripcion']}" for item in st.session_state.catalogo]
+    skus_opt = [f"{item['sku'].replace('_bis', '')} - {item['descripcion']}" for item in st.session_state.catalogo]
     c1, c2, c3 = st.columns([2, 1, 1])
     with c1:
         sel_sku = st.selectbox("Seleccionar Producto:", options=skus_opt, key="select_sku_venc")
@@ -958,7 +951,9 @@ with tab2:
             st.rerun()
     
     st.markdown("#### Catálogo Actual:")
-    st.dataframe(pd.DataFrame(st.session_state.catalogo), use_container_width=True)
+    # Mostrar catálogo limpio sin sufijos técnicos internos
+    cat_display = [{"sku": item["sku"].replace("_bis", ""), "descripcion": item["descripcion"]} for item in st.session_state.catalogo]
+    st.dataframe(pd.DataFrame(cat_display), use_container_width=True)
 
 # --- PESTAÑA 3: EXTRACCIÓN PDF (RUTAS) ---
 with tab3:
@@ -994,10 +989,6 @@ with tab3:
 # --- PESTAÑA 4: RECEPCIÓN DE CARGUES (AUTOVENTA) ---
 with tab4:
     st.markdown('<p class="sub-title">🚚 Bandeja de Pedidos y Cargues en Vivo (Enviados por Conductores)</p>', unsafe_allow_html=True)
-    
-    # Control automático de hora (Corte a las 12:30 PM hora colombiana)
-    ahora_col = datetime.now(COLOMBIA_TZ)
-    limite_corte = ahora_col.replace(hour=12, minute=30, second=0, microsecond=0)
     
     pedidos_guardados = cargar_json(ARCHIVO_PEDIDOS, {})
     st.session_state.pedidos_autoventa = pedidos_guardados
