@@ -5,10 +5,13 @@ import io
 import os
 import re
 import json
-from datetime import datetime, date
+from datetime import datetime, date, timezone, timedelta
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+
+# Zona horaria de Colombia (UTC-5)
+COLOMBIA_TZ = timezone(timedelta(hours=-5))
 
 # ---------------------------------------------------------
 # 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS
@@ -64,15 +67,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 2. CREDENCIALES POR USUARIO / RUTA Y PERSISTENCIA COMPARTIDA
+# 2. CREDENCIALES SIMPLIFICADAS PARA CONDUCTORES Y ADMIN
 # ---------------------------------------------------------
 USUARIOS_SISTEMA = {
-    "admin":  {"password": "inesco2026admin", "rol": "admin",  "ruta": None,     "placa": None},
-    "ruta71": {"password": "71",              "rol": "driver", "ruta": "ML3E71", "placa": "JYY 174"},
-    "ruta74": {"password": "74",              "rol": "driver", "ruta": "ML3E74", "placa": "JYY 262"},
-    "ruta75": {"password": "75",              "rol": "driver", "ruta": "ML3E75", "placa": "JYY 180"},
-    "ruta76": {"password": "76",              "rol": "driver", "ruta": "ML3E76", "placa": "JYY 177"},
-    "ruta77": {"password": "77",              "rol": "driver", "ruta": "ML3E77", "placa": "JYY 175"},
+    "inesco2026admin": {"rol": "admin",  "ruta": None,     "placa": None},
+    "71":              {"rol": "driver", "ruta": "ML3E71", "placa": "JYY 174"},
+    "74":              {"rol": "driver", "ruta": "ML3E74", "placa": "JYY 262"},
+    "75":              {"rol": "driver", "ruta": "ML3E75", "placa": "JYY 180"},
+    "76":              {"rol": "driver", "ruta": "ML3E76", "placa": "JYY 177"},
+    "77":              {"rol": "driver", "ruta": "ML3E77", "placa": "JYY 175"},
 }
 
 ARCHIVO_PEDIDOS = "pedidos_autoventa_db.json"
@@ -91,7 +94,6 @@ def guardar_json(filepath, data):
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-# Inicializar estados desde disco para que sean compartidos entre sesiones/dispositivos
 if "vencimientos" not in st.session_state:
     st.session_state.vencimientos = cargar_json(ARCHIVO_VENCIMIENTOS, [])
 
@@ -124,7 +126,7 @@ with col_h3:
     st.markdown("<h1 style='text-align: center; font-size: 2.5rem; margin-top: 20px;'>🚚</h1>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 3. CATÁLOGO OFICIAL Y ESTRUCTURA DE BODEGA
+# 3. CATÁLOGO OFICIAL Y ESTRUCTURA ORDENADA POR SECCIONES
 # ---------------------------------------------------------
 CATALOGO_SECCIONES = {
     "1. PRODUCTOS 8 ONZAS (VIR / RGB)": [
@@ -326,13 +328,13 @@ CATALOGO_SECCIONES = {
 
 if "catalogo" not in st.session_state:
     st.session_state.catalogo = []
-    for sec, productos in CATALOGO_SECCIONES.items():
-        for p in productos:
+    for sec, prods in CATALOGO_SECCIONES.items():
+        for p in prods:
             if not any(item["sku"] == p["sku"] for item in st.session_state.catalogo):
                 st.session_state.catalogo.append(p)
 
 # ---------------------------------------------------------
-# 4. EXPORTADOR EXCEL: FORMATO BODEGA COMPLETO
+# 4. EXPORTADOR EXCEL PROFESIONAL (BODEGA, TAMAÑO CARTA, CÁLCULOS Y OCULTO DE CEROS)
 # ---------------------------------------------------------
 def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
     wb = Workbook()
@@ -350,14 +352,18 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
     )
     
     for nombre_ruta, r_info in rutas_dict.items():
-        filas_totales_secciones = []
         safe_title = re.sub(r'[\\/*?:[\]]', '_', nombre_ruta)
         ws = wb.create_sheet(title=safe_title[:30])
         
+        # Configuración de página tamaño Carta, horizontal ajustada a 1 página de ancho
         ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+        ws.page_setup.paperSize = ws.PAPERSIZE_LETTER
         ws.page_setup.fitToWidth = 1
         ws.page_setup.fitToHeight = 0
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.page_setup.horizontalCentered = True
         
+        # Título superior
         ws.merge_cells('A1:G1')
         title_cell = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO - HOJA DE CARGUE")
         title_cell.font = Font(bold=True, size=14, color="FFFFFF")
@@ -365,6 +371,7 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
         title_cell.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[1].height = 30
 
+        # Ruta y Placa centrados
         ws.merge_cells('A2:C2')
         r_cell = ws.cell(row=2, column=1, value=f"Ruta: {nombre_ruta}")
         r_cell.font = Font(bold=True, size=12, color="1F4E78")
@@ -376,6 +383,7 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
         p_cell.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[2].height = 24
 
+        # Fecha centrada, resaltada y en negrita
         ws.merge_cells('A3:B3')
         f_lbl = ws.cell(row=3, column=1, value="FECHA:")
         f_lbl.font = Font(bold=True, size=11, color="000000")
@@ -388,6 +396,7 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
         date_cell.fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
         ws.row_dimensions[3].height = 22
 
+        # Cabeceras
         headers = ["SKU", "ELEMENTO", "CANTIDAD", "DEVOLUCIÓN 1", "DEVOLUCIÓN 2", "DEVOLUCIÓN 3", "PISO / UBICACIÓN"]
         for col_idx, h_text in enumerate(headers, start=1):
             c = ws.cell(row=4, column=col_idx, value=h_text)
@@ -396,13 +405,17 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
             c.border = black_border
             c.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[4].height = 24
-        ws.auto_filter.ref = "A4:G1000"
+        
+        ws.auto_filter.ref = f"A4:G1000"
             
         current_row = 5
         productos_dict_pedido = r_info.get("productos", {})
+        filas_totales_secciones = []
+        filas_secciones_retornables_cajas = [] # Para sumar botellas retornables (8oz y 350ml)
         
         for nombre_seccion, lista_prods in CATALOGO_SECCIONES.items():
             start_sec_row = current_row
+            rows_in_section = 0
             
             for item in lista_prods:
                 sku = item["sku"]
@@ -429,10 +442,12 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
                     cell.border = black_border
                 ws.row_dimensions[current_row].height = 20
                 
+                # Ocultar automáticamente filas con cantidad 0
                 if qty == 0:
                     ws.row_dimensions[current_row].hidden = True
                     
                 current_row += 1
+                rows_in_section += 1
                 
             end_sec_row = current_row - 1
             ws.cell(row=current_row, column=1, value="")
@@ -449,6 +464,10 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
             
             filas_totales_secciones.append(f"C{current_row}")
             
+            # Si es la sección 1 o 2 (Productos retornables 8oz y 350ml), guardamos la celda del total de cajas
+            if "1. PRODUCTOS 8 ONZAS" in nombre_seccion or "2. PRODUCTOS 350 ML" in nombre_seccion:
+                filas_secciones_retornables_cajas.append(f"C{current_row}")
+            
             for c_i in range(1, 8):
                 cell = ws.cell(row=current_row, column=c_i)
                 cell.fill = section_total_fill
@@ -458,6 +477,7 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
             ws.row_dimensions[current_row].height = 22
             current_row += 1
             
+        # Bloque final de Canastas, Estibas y Códigos de Botellas
         extras = [
             ("BOT COCA-COLA 8 OZ (CANASTA)", 183303),
             ("BOT COCA-COLA 350ML", 184017),
@@ -471,13 +491,21 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
         ]
         
         current_row += 2
+        fila_inicio_extras = current_row
+        
         for item_extra, cod_ext in extras:
             c_ext = ws.cell(row=current_row, column=2, value=item_extra)
             c_ext.font = Font(name="Calibri", size=10, bold=True)
             c_ext.alignment = Alignment(horizontal="center", vertical="center")
             
             ws.cell(row=current_row, column=1, value=cod_ext).alignment = Alignment(horizontal="center", vertical="center")
-            ws.cell(row=current_row, column=3, value="")
+            
+            # Si es canasta de botellas retornables, calcular automáticamente con fórmula el total de cajas de 8oz y 350ml
+            if "CANASTA" in item_extra and ("8 OZ" in item_extra or "350ML" in item_extra) and filas_secciones_retornables_cajas:
+                formula_cajas = "=" + "+".join(filas_secciones_retornables_cajas)
+                ws.cell(row=current_row, column=3, value=formula_cajas)
+            else:
+                ws.cell(row=current_row, column=3, value="")
             
             for c_i in range(1, 8):
                 cell = ws.cell(row=current_row, column=c_i)
@@ -487,6 +515,7 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
             ws.row_dimensions[current_row].height = 20
             current_row += 1
 
+        # TOTAL CAJAS DEL CARGUE FINAL
         current_row += 1
         ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=2)
         gt_label = ws.cell(row=current_row, column=1, value="TOTAL CAJAS DEL CARGUE:")
@@ -516,14 +545,14 @@ def exportar_excel_estilo_bodega(rutas_dict, fecha_str):
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 5. EXTRACCIÓN DE PDF Y VENCIMIENTOS (FUNCIONALIDAD ORIGINAL RESTAURADA)
+# 5. EXTRACCIÓN DE PDF Y VENCIMIENTOS (ORIGINAL RESTAURADO)
 # ---------------------------------------------------------
 def procesar_pdf_rutas(pdf_file):
     routes_data = {}
     mapa_catalogo = {item["sku"]: item["descripcion"] for item in st.session_state.catalogo}
     with pdfplumber.open(pdf_file) as pdf:
-        current_route = "ML3E71"
-        current_header_info = "Ruta / No.de Carga: ML3E71"
+        current_route = "ML3E51"
+        current_header_info = "Ruta / No.de Carga: ML3E51"
         for page in pdf.pages:
             texto_pagina = page.extract_text()
             if not texto_pagina:
@@ -532,23 +561,45 @@ def procesar_pdf_rutas(pdf_file):
                 l_str = linea.strip()
                 if not l_str:
                     continue
-                m_ruta = re.search(r'ML3[E5]\d+', l_str)
+                m_ruta = re.search(r'ML3E5[1-3]', l_str)
                 if m_ruta:
                     current_route = m_ruta.group(0)
-                    current_header_info = f"Ruta / No.de Carga: {current_route}"
+                if "Ruta" in l_str or "No.de Carga" in l_str or "Fecha de Entrega" in l_str:
+                    current_header_info = l_str
+                    continue 
                 m_sku = re.search(r'\b(\d{5,6})\b', l_str)
                 if m_sku:
                     sku = m_sku.group(1)
                     cajas, unidades = 0, 0
                     m_slash = re.search(r'(?:^|\s)(\d+)?\s*/\s*(\d+)', l_str)
                     if m_slash:
-                        cajas = int(m_slash.group(1)) if m_slash.group(1) else 0
-                        unidades = int(m_slash.group(2)) if m_slash.group(2) else 0
+                        c_str = m_slash.group(1)
+                        u_str = m_slash.group(2)
+                        cajas = int(c_str) if c_str else 0
+                        unidades = int(u_str) if u_str else 0
+                    else:
+                        m_qty = re.search(r'[\$\s]*(\d+)\s*[/\\-]\s*(\d+)', l_str)
+                        if m_qty:
+                            cajas = int(m_qty.group(1))
+                            unidades = int(m_qty.group(2))
+                    
+                    desc_limpia = l_str.replace(sku, "")
+                    if m_slash:
+                        desc_limpia = desc_limpia.replace(m_slash.group(0), "")
+                    desc_limpia = re.sub(r'\s+\d+\s*[/\\-]\s*\d+\s*$', '', desc_limpia)
+                    desc_limpia = re.sub(r'\s+[/\\-]\s*\d+\s*$', '', desc_limpia)
+                    desc_limpia = re.sub(r'\b\d{5,7}\b\s*_+', '', desc_limpia)
+                    desc_limpia = re.sub(r'\b\d{5,7}\b', '', desc_limpia)
+                    desc_limpia = re.sub(r'_+', '', desc_limpia)
+                    desc_limpia = re.sub(r'[\$\|\(\)]', '', desc_limpia).strip()
+                    
+                    descripcion_final = desc_limpia if len(desc_limpia) > 3 else mapa_catalogo.get(sku, "PRODUCTO FEMSA")
+                    
                     if current_route not in routes_data:
                         routes_data[current_route] = {"header": current_header_info, "items": []}
                     routes_data[current_route]["items"].append({
                         "SKU": sku,
-                        "Descripción del Producto": mapa_catalogo.get(sku, "PRODUCTO FEMSA"),
+                        "Descripción del Producto": descripcion_final,
                         "Cajas": cajas,
                         "Unidades": unidades
                     })
@@ -577,11 +628,130 @@ def convertir_df_a_excel(df_dict):
             df.to_excel(writer, sheet_name=safe_name, index=False)
     return output.getvalue()
 
+def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Vencimientos"
+    
+    red_title_font = Font(color="FFFFFF", bold=True, size=13, name="Calibri")
+    title_fill = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid")
+    header_fill = PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
+    
+    black_border = Border(
+        left=Side(style='thin', color='000000'), right=Side(style='thin', color='000000'),
+        top=Side(style='thin', color='000000'), bottom=Side(style='thin', color='000000')
+    )
+    
+    white_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+    fill_rojo_celda = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+    font_rojo_celda = Font(name="Calibri", size=11, color="9C0006", bold=True)
+    fill_amarillo_celda = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
+    font_amarillo_celda = Font(name="Calibri", size=11, color="9C6500", bold=True)
+    fill_verde_celda = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+    font_verde_celda = Font(name="Calibri", size=11, color="006100")
+
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=6)
+    cell_t = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO - CONTROL DE VENCIMIENTOS POR SECCIÓN")
+    cell_t.font = red_title_font
+    cell_t.fill = title_fill
+    cell_t.alignment = Alignment(horizontal="center", vertical="center")
+    for col in range(1, 7):
+        ws.cell(row=1, column=col).border = black_border
+        ws.cell(row=1, column=col).fill = title_fill
+
+    sub_fill = PatternFill(start_color="ED7D31", end_color="ED7D31", fill_type="solid")
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=6)
+    cell_s = ws.cell(row=2, column=1, value=f"📌 Reporte Agrupado por Secciones del Catálogo (Fecha: {fecha_str})")
+    cell_s.font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
+    cell_s.fill = sub_fill
+    cell_s.alignment = Alignment(horizontal="center", vertical="center")
+    for col in range(1, 7):
+        ws.cell(row=2, column=col).border = black_border
+        ws.cell(row=2, column=col).fill = sub_fill
+
+    ws.row_dimensions[1].height = 28
+    ws.row_dimensions[2].height = 24
+    ws.row_dimensions[3].height = 10
+    ws.row_dimensions[4].height = 24
+
+    headers = ["SKU", "Descripción del Producto", "Fecha Vencimiento", "Cantidad", "Estado de Alerta", "Días Restantes"]
+    for col_idx, h_name in enumerate(headers, start=1):
+        c = ws.cell(row=4, column=col_idx, value=h_name)
+        c.fill = header_fill
+        c.font = header_font
+        c.border = black_border
+        c.alignment = Alignment(horizontal="center", vertical="center")
+
+    catalogo_actual = st.session_state.get("catalogo", [])
+    orden_catalogo = {item["sku"]: idx for idx, item in enumerate(catalogo_actual)}
+
+    datos_procesados = []
+    for item in vencimientos_list:
+        estado, dias = calcular_estado_vencimiento(item["Fecha Vencimiento"])
+        pos_catalogo = orden_catalogo.get(item["SKU"], 999)
+        datos_procesados.append({
+            "SKU": item["SKU"],
+            "Descripción del Producto": item["Descripción del Producto"],
+            "Fecha Vencimiento": item["Fecha Vencimiento"],
+            "Cantidad": item.get("Cantidad", "-"),
+            "Estado": estado,
+            "Dias": dias,
+            "PosCat": pos_catalogo
+        })
+
+    datos_ordenados = sorted(datos_procesados, key=lambda x: x["PosCat"])
+
+    for row_idx, r_data in enumerate(datos_ordenados, start=5):
+        ws.row_dimensions[row_idx].height = 20
+        if r_data["Dias"] < 0 or r_data["Dias"] <= 30:
+            f_fill, f_font = fill_rojo_celda, font_rojo_celda
+        elif r_data["Dias"] <= 60:
+            f_fill, f_font = fill_amarillo_celda, font_amarillo_celda
+        else:
+            f_fill, f_font = fill_verde_celda, font_verde_celda
+
+        vals = [
+            r_data["SKU"],
+            r_data["Descripción del Producto"],
+            r_data["Fecha Vencimiento"],
+            r_data["Cantidad"],
+            r_data["Estado"],
+            r_data["Dias"] if r_data["Dias"] != 9999 else "N/A"
+        ]
+
+        for col_idx, val in enumerate(vals, start=1):
+            c = ws.cell(row=row_idx, column=col_idx, value=val)
+            c.border = black_border
+            if col_idx in [1, 2, 3, 4]:
+                c.fill = white_fill
+                c.font = Font(name="Calibri", size=11, color="000000")
+                if col_idx in [1, 3, 4]:
+                    c.alignment = Alignment(horizontal="center", vertical="center")
+                else:
+                    c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+            elif col_idx == 5:
+                c.fill = f_fill
+                c.font = f_font
+                c.alignment = Alignment(horizontal="center", vertical="center")
+            else:
+                c.fill = white_fill
+                c.font = Font(name="Calibri", size=11, color="000000")
+                c.alignment = Alignment(horizontal="center", vertical="center")
+
+    for col_idx in range(1, 7):
+        col_letter = get_column_letter(col_idx)
+        max_len = max(len(str(ws.cell(row=r, column=col_idx).value or '')) for r in range(4, ws.max_row + 1))
+        ws.column_dimensions[col_letter].width = max(max_len + 6, 20)
+
+    output = io.BytesIO()
+    wb.save(output)
+    return output.getvalue()
+
 # ---------------------------------------------------------
-# 6. PANTALLA DE ACCESO (LOGIN POR USUARIO Y CONTRASEÑA)
+# 6. PANTALLA DE ACCESO (LOGIN SIMPLIFICADO CON CONTRASEÑA)
 # ---------------------------------------------------------
 def limpiar_campos_login():
-    st.session_state["input_user"] = ""
     st.session_state["input_pwd"] = ""
 
 if not st.session_state.autenticado:
@@ -593,27 +763,26 @@ if not st.session_state.autenticado:
     with col2:
         with st.container():
             st.markdown("### 🔐 Iniciar Sesión")
-            user_input = st.text_input("Usuario (ej: admin, ruta71, ruta74...):", key="input_user").strip().lower()
-            pwd_input = st.text_input("Contraseña:", type="password", key="input_pwd").strip()
+            pwd_input = st.text_input("Ingrese su Contraseña (o número de ruta 71, 74...):", type="password", key="input_pwd").strip()
             
             col_b1, col_b2 = st.columns(2)
             with col_b1:
                 if st.button("Ingresar", use_container_width=True):
-                    if user_input in USUARIOS_SISTEMA and USUARIOS_SISTEMA[user_input]["password"] == pwd_input:
-                        datos_usr = USUARIOS_SISTEMA[user_input]
+                    if pwd_input in USUARIOS_SISTEMA:
+                        datos_usr = USUARIOS_SISTEMA[pwd_input]
                         st.session_state.autenticado = True
                         st.session_state.rol_usuario = datos_usr["rol"]
                         st.session_state.ruta_asignada = datos_usr["ruta"]
                         st.session_state.placa_asignada = datos_usr["placa"]
                         st.rerun()
                     else:
-                        st.error("❌ Usuario o contraseña incorrectos.")
+                        st.error("❌ Contraseña incorrecta.")
             with col_b2:
                 st.button("Limpiar", on_click=limpiar_campos_login, use_container_width=True)
     st.stop()
 
 # ---------------------------------------------------------
-# 7. PORTAL DE CONDUCTORES (CON RUTA BLOQUEADA Y SIN CIERRE DE SECCIÓN)
+# 7. PORTAL DE CONDUCTORES (CON RECARGA DE PEDIDO PREVIO Y HORA COLOMBIA)
 # ---------------------------------------------------------
 if st.session_state.rol_usuario == "driver":
     ruta_fija = st.session_state.ruta_asignada
@@ -632,17 +801,33 @@ if st.session_state.rol_usuario == "driver":
     st.markdown("---")
     st.markdown("#### 📦 Digita las cantidades solicitadas por sección:")
     
+    # Cargar pedidos existentes para precargar si ya había enviado antes hoy
+    hoy_str = datetime.now(COLOMBIA_TZ).strftime("%Y-%m-%d")
+    pedidos_actuales = cargar_json(ARCHIVO_PEDIDOS, {})
+    pedido_existente_ruta = pedidos_actuales.get(ruta_fija, {})
+    
+    # Si es del mismo día, precargamos los productos ya pedidos en el session_state si no están cargados
+    if pedido_existente_ruta.get("fecha") == hoy_str:
+        prod_previos = pedido_existente_ruta.get("productos", {})
+        for k, v in prod_previos.items():
+            key_st = f"drv_{ruta_fija}_{v['SKU']}"
+            if key_st not in st.session_state:
+                st.session_state[key_st] = v['Cantidad']
+
     pedido_ruta = {}
-    for sec_idx, (nombre_seccion, lista_productos) in enumerate(CATALOGO_SECCIONES.items()):
-        # Título estático para que Streamlit NUNCA cierre el expander al cambiar un número
+    for nombre_seccion, lista_productos in CATALOGO_SECCIONES.items():
         with st.expander(f"📌 {nombre_seccion}", expanded=False):
             cant_seccion_actual = 0
             for idx, item in enumerate(lista_productos):
+                key_input = f"drv_{ruta_fija}_{item['sku']}"
+                val_inicial = st.session_state.get(key_input, 0)
+                
                 cant = st.number_input(
                     f"{item['sku']} - {item['descripcion']}",
                     min_value=0,
                     step=1,
-                    key=f"drv_{ruta_fija}_{item['sku']}_{idx}"
+                    value=val_inicial,
+                    key=key_input
                 )
                 if cant > 0:
                     cant_seccion_actual += 1
@@ -659,32 +844,31 @@ if st.session_state.rol_usuario == "driver":
     with col_env1:
         if st.button("🚀 Enviar Solicitud de Carga a Bodega"):
             if pedido_ruta:
-                # Cargar lo que haya en disco, actualizar esta ruta y guardar persistente
-                pedidos_actuales = cargar_json(ARCHIVO_PEDIDOS, {})
+                hora_colombia = datetime.now(COLOMBIA_TZ).strftime("%H:%M:%S")
                 pedidos_actuales[ruta_fija] = {
                     "placa": placa_fija,
-                    "fecha": str(date.today()),
-                    "hora_envio": datetime.now().strftime("%H:%M:%S"),
+                    "fecha": hoy_str,
+                    "hora_envio": hora_colombia,
                     "productos": pedido_ruta
                 }
                 guardar_json(ARCHIVO_PEDIDOS, pedidos_actuales)
                 st.session_state.pedidos_autoventa = pedidos_actuales
-                st.success(f"✅ ¡Pedido de la {ruta_fija} ({placa_fija}) enviado y guardado exitosamente en bodega!")
+                st.success(f"✅ ¡Pedido de la {ruta_fija} ({placa_fija}) enviado y guardado exitosamente a las {hora_colombia}!")
             else:
                 st.warning("⚠️ Digita al menos un producto con cantidad mayor a 0.")
     with col_env2:
         if pedido_ruta:
-            excel_driver_bytes = exportar_excel_estilo_bodega({ruta_fija: {"placa": placa_fija, "productos": pedido_ruta}}, fecha_str=str(date.today()))
+            excel_driver_bytes = exportar_excel_estilo_bodega({ruta_fija: {"placa": placa_fija, "productos": pedido_ruta}}, fecha_str=hoy_str)
             st.download_button(
                 label="📥 Descargar mi Solicitud en Excel (.xlsx)",
                 data=excel_driver_bytes,
-                file_name=f"Solicitud_{ruta_fija}_{date.today()}.xlsx",
+                file_name=f"Solicitud_{ruta_fija}_{hoy_str}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
     st.stop()
 
 # ---------------------------------------------------------
-# 8. PANEL DE ADMINISTRACIÓN (TODAS LAS PESTAÑAS FUNCIONALES)
+# 8. PANEL DE ADMINISTRACIÓN (PESTAÑAS ORIGINALES RESTAURADAS)
 # ---------------------------------------------------------
 col_head1, col_head2 = st.columns([6, 1])
 with col_head1:
@@ -702,7 +886,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "🚚 Recepción de Cargues (Autoventa)"
 ])
 
-# --- PESTAÑA 1: FECHAS DE VENCIMIENTO COMPLETA ---
+# --- PESTAÑA 1: FECHAS DE VENCIMIENTO ---
 with tab1:
     st.markdown('<p class="sub-title">➕ Agregar o Actualizar Fecha de Vencimiento</p>', unsafe_allow_html=True)
     skus_opt = [f"{item['sku']} - {item['descripcion']}" for item in st.session_state.catalogo]
@@ -726,13 +910,17 @@ with tab1:
                 "Fecha Vencimiento": nueva_fecha_str
             })
             guardar_json(ARCHIVO_VENCIMIENTOS, st.session_state.vencimientos)
-            st.success("✅ ¡Fecha guardada correctamente!")
+            st.success("✅ ¡Guardado correctamente!")
             st.rerun()
 
-    st.markdown('<p class="sub-title">📋 Control de Lotes y Vencimientos Registrados</p>', unsafe_allow_html=True)
     if st.session_state.vencimientos:
+        if st.button("🗑️ Limpiar Todos los Vencimientos"):
+            st.session_state.vencimientos = []
+            guardar_json(ARCHIVO_VENCIMIENTOS, [])
+            st.rerun()
+
         filas_venc = []
-        for idx, reg in enumerate(st.session_state.vencimientos):
+        for reg in st.session_state.vencimientos:
             estado_txt, dias_rest = calcular_estado_vencimiento(reg["Fecha Vencimiento"])
             filas_venc.append({
                 "SKU": reg["SKU"],
@@ -744,25 +932,18 @@ with tab1:
             })
         df_venc = pd.DataFrame(filas_venc)
         st.dataframe(df_venc, use_container_width=True)
-
-        col_v1, col_v2 = st.columns(2)
-        with col_v1:
-            excel_venc_bytes = convertir_df_a_excel({"Vencimientos": df_venc})
-            st.download_button(
-                label="📥 Descargar Reporte de Vencimientos (.xlsx)",
-                data=excel_venc_bytes,
-                file_name=f"Vencimientos_Inesco_{date.today()}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        with col_v2:
-            if st.button("🗑️ Limpiar Todos los Vencimientos"):
-                st.session_state.vencimientos = []
-                guardar_json(ARCHIVO_VENCIMIENTOS, [])
-                st.rerun()
+        
+        excel_venc_bytes = exportar_excel_vencimientos_organizado(st.session_state.vencimientos, fecha_str=date.today().strftime('%d/%m/%Y'))
+        st.download_button(
+            label="📥 Descargar Reporte de Vencimientos (.xlsx)",
+            data=excel_venc_bytes,
+            file_name=f"Vencimientos_Inesco_{date.today()}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
     else:
-        st.info("ℹ️ No hay fechas de vencimiento registradas aún.")
+        st.info("ℹ️ No hay fechas de vencimiento registradas.")
 
-# --- PESTAÑA 2: ADMINISTRAR SKUs ---
+# --- PESTAÑA 2: ADMINISTRAR SKUS ---
 with tab2:
     st.markdown('<p class="sub-title">⚙️ Administrar Catálogo de SKUs</p>', unsafe_allow_html=True)
     col_add1, col_add2 = st.columns([1, 2])
@@ -779,7 +960,7 @@ with tab2:
     st.markdown("#### Catálogo Actual:")
     st.dataframe(pd.DataFrame(st.session_state.catalogo), use_container_width=True)
 
-# --- PESTAÑA 3: EXTRACCIÓN PDF (RUTAS) COMPLETA ---
+# --- PESTAÑA 3: EXTRACCIÓN PDF (RUTAS) ---
 with tab3:
     st.markdown('<p class="sub-title">📄 Extracción Total de Rutas y Cargues de FEMSA</p>', unsafe_allow_html=True)
     archivo_pdf = st.file_uploader("📂 Seleccionar archivo PDF de Rutas", type=["pdf"], key="uploader_pdf_rutas")
@@ -789,9 +970,9 @@ with tab3:
                 datos_rutas = procesar_pdf_rutas(archivo_pdf)
                 if datos_rutas:
                     st.session_state["datos_pdf_extraidos"] = datos_rutas
-                    st.success(f"✅ Se procesaron {len(datos_rutas)} ruta(s) correctamente.")
+                    st.success(f"✅ Se procesaron {len(datos_rutas)} ruta(s).")
                 else:
-                    st.warning("⚠️ No se detectaron rutas o SKUs válidos en el archivo PDF.")
+                    st.warning("⚠️ No se detectaron rutas.")
 
     if "datos_pdf_extraidos" in st.session_state and st.session_state["datos_pdf_extraidos"]:
         datos_rutas = st.session_state["datos_pdf_extraidos"]
@@ -800,9 +981,9 @@ with tab3:
             with st.expander(f"🚚 {r_content['header']} ({len(r_content['items'])} registros)", expanded=True):
                 df_r = pd.DataFrame(r_content["items"])
                 st.dataframe(df_r, use_container_width=True)
-                dfs_para_excel[r_code] = df_r
+                dfs_para_excel[r_code] = {"df": df_r, "header": r_content["header"]}
         
-        excel_pdf_bytes = convertir_df_a_excel(dfs_para_excel)
+        excel_pdf_bytes = exportar_excel_multiruta(dfs_para_excel, fecha_str=date.today().strftime('%d/%m/%Y'), es_reporte_rutas=True)
         st.download_button(
             label="📥 Descargar Extracción de Rutas en Excel (.xlsx)",
             data=excel_pdf_bytes,
@@ -810,11 +991,14 @@ with tab3:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-# --- PESTAÑA 4: RECEPCIÓN DE CARGUES (CON LECTURA PERSISTENTE DESDE DISCO) ---
+# --- PESTAÑA 4: RECEPCIÓN DE CARGUES (AUTOVENTA) ---
 with tab4:
     st.markdown('<p class="sub-title">🚚 Bandeja de Pedidos y Cargues en Vivo (Enviados por Conductores)</p>', unsafe_allow_html=True)
     
-    # Recargar siempre desde archivo compartido para ver pedidos enviados desde celulares/otras sesiones
+    # Control automático de hora (Corte a las 12:30 PM hora colombiana)
+    ahora_col = datetime.now(COLOMBIA_TZ)
+    limite_corte = ahora_col.replace(hour=12, minute=30, second=0, microsecond=0)
+    
     pedidos_guardados = cargar_json(ARCHIVO_PEDIDOS, {})
     st.session_state.pedidos_autoventa = pedidos_guardados
 
@@ -823,10 +1007,10 @@ with tab4:
         if st.button("🔄 Actualizar Bandeja"):
             st.rerun()
     with col_ctrl2:
-        if st.button("🧹 Limpiar / Archivar Pedidos del Día Anterior"):
+        if st.button("🧹 Limpiar / Archivar Pedidos"):
             guardar_json(ARCHIVO_PEDIDOS, {})
             st.session_state.pedidos_autoventa = {}
-            st.success("¡Bandeja restablecida para los pedidos de hoy!")
+            st.success("¡Bandeja restablecida!")
             st.rerun()
 
     if pedidos_guardados:
@@ -855,11 +1039,11 @@ with tab4:
                     
         st.divider()
         if dict_pedidos_excel:
-            excel_bodega_bytes = exportar_excel_estilo_bodega(dict_pedidos_excel, fecha_str=date.today().strftime('%Y-%m-%d'))
+            excel_bodega_bytes = exportar_excel_estilo_bodega(dict_pedidos_excel, fecha_str=datetime.now(COLOMBIA_TZ).strftime('%Y-%m-%d'))
             st.download_button(
-                label=f"📥 Descargar Cargue Formato Bodega ({date.today()})",
+                label=f"📥 Descargar Cargue Formato Bodega ({datetime.now(COLOMBIA_TZ).strftime('%Y-%m-%d')})",
                 data=excel_bodega_bytes,
-                file_name=f"Cargue_Inesco_Consolidado_{date.today()}.xlsx",
+                file_name=f"Cargue_Inesco_Consolidado_{datetime.now(COLOMBIA_TZ).strftime('%Y-%m-%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="dl_pedidos_excel_bodega"
             )
